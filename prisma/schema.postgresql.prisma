@@ -1,0 +1,237 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth Models ────────────────────────────────────────────────
+
+model User {
+  id            String          @id @default(cuid())
+  name          String?
+  email         String          @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+  role          Role            @default(USER)
+  accounts      Account[]
+  sessions      Session[]
+  attempts      LabAttempt[]
+  progress      UserProgress[]
+  scans         Scan[]
+  events        SecurityEvent[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Lab Models ─────────────────────────────────────────────────
+
+model Lab {
+  id             String      @id @default(cuid())
+  slug           String      @unique
+  title          String
+  description    String      @db.Text
+  difficulty     Difficulty
+  category       XSSCategory
+  points         Int
+  objective      String      @db.Text
+  hint1          String      @db.Text
+  hint2          String      @db.Text
+  solution       String      @db.Text
+  vulnCode       String      @db.Text
+  secureCode     String      @db.Text
+  vulnEndpoint   String
+  secureEndpoint String
+  explanation    String      @db.Text
+  dataFlow       String      @db.Text
+  remediation    String      @db.Text
+  enabled        Boolean     @default(true)
+  order          Int         @default(0)
+  attempts       LabAttempt[]
+  progress       UserProgress[]
+  labComments    LabComment[]
+  scanResults    Scan[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([category])
+  @@index([difficulty])
+  @@index([enabled])
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+  EXPERT
+}
+
+enum XSSCategory {
+  REFLECTED
+  STORED
+  DOM
+  FILTER_BYPASS
+  CONTEXT
+}
+
+model LabAttempt {
+  id        String   @id @default(cuid())
+  userId    String
+  labId     String
+  mode      LabMode
+  payload   String?  @db.Text
+  success   Boolean  @default(false)
+  hintsUsed Int      @default(0)
+  score     Int      @default(0)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lab       Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([labId])
+  @@index([userId, labId])
+}
+
+enum LabMode {
+  LEARN
+  CHALLENGE
+}
+
+model UserProgress {
+  id            String   @id @default(cuid())
+  userId        String
+  labId         String
+  completed     Boolean  @default(false)
+  bestScore     Int      @default(0)
+  totalAttempts Int      @default(0)
+  hintsUsed     Int      @default(0)
+  completedAt   DateTime?
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lab           Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, labId])
+  @@index([userId])
+}
+
+// ─── Lab Data (Isolated from main app) ──────────────────────────
+
+model LabComment {
+  id        String   @id @default(cuid())
+  labId     String
+  username  String
+  content   String   @db.Text
+  lab       Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([labId])
+}
+
+// ─── Scanner Models ─────────────────────────────────────────────
+
+model Scan {
+  id        String       @id @default(cuid())
+  userId    String
+  targetUrl String
+  labId     String?
+  status    ScanStatus   @default(PENDING)
+  results   ScanResult[]
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lab       Lab?         @relation(fields: [labId], references: [id])
+  createdAt DateTime     @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+enum ScanStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model ScanResult {
+  id          String      @id @default(cuid())
+  scanId      String
+  type        XSSCategory
+  severity    Severity
+  confidence  Int
+  parameter   String
+  context     String
+  evidence    String      @db.Text
+  remediation String      @db.Text
+  scan        Scan        @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@index([severity])
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// ─── Security Events ────────────────────────────────────────────
+
+model SecurityEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  type      String
+  severity  Severity @default(LOW)
+  details   String   @db.Text
+  ip        String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([severity])
+  @@index([createdAt])
+  @@index([userId])
+}
