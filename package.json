@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "npx prisma generate && next build",
+    "prepare:prisma": "node scripts/prepare-prisma.js",
+    "dev": "npm run prepare:prisma && next dev",
+    "build": "npm run prepare:prisma && npx prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "npx prisma generate",
+    "postinstall": "npm run prepare:prisma && npx prisma generate",
     "db:migrate": "npx prisma migrate dev",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "npx prisma migrate reset --force"
