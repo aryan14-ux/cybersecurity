@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { Sparkles, Trash2, ShieldCheck, AlertTriangle, Send } from "lucide-react";
 
 interface Comment {
   id: string;
@@ -22,10 +23,30 @@ export function StoredXSSClient({
   const [username, setUsername] = useState("");
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const commentsContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setComments(initialComments);
   }, [initialComments]);
+
+  // Execute injected script tags inside vulnerable comments (mimicking real browser rendering of stored HTML)
+  useEffect(() => {
+    if (isSecure || !commentsContainerRef.current) return;
+
+    const scriptNodes = commentsContainerRef.current.querySelectorAll(".vulnerable-comment-content script");
+    scriptNodes.forEach((oldScript) => {
+      if ((oldScript as any).__xss_executed) return;
+      (oldScript as any).__xss_executed = true;
+
+      const newScript = document.createElement("script");
+      Array.from(oldScript.attributes).forEach((attr) => {
+        newScript.setAttribute(attr.name, attr.value);
+      });
+      newScript.textContent = oldScript.textContent;
+      oldScript.parentNode?.replaceChild(newScript, oldScript);
+    });
+  }, [comments, isSecure]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,6 +76,26 @@ export function StoredXSSClient({
     }
   };
 
+  const handleResetReviews = async () => {
+    setClearing(true);
+    try {
+      await fetch("/api/labs/comments?labId=stored-xss-comments", {
+        method: "DELETE",
+      });
+      setComments([]);
+      router.refresh();
+    } catch (err) {
+      console.error("Failed to reset reviews:", err);
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const setPayload = (payload: string) => {
+    setUsername("Attacker");
+    setContent(payload);
+  };
+
   const accentBorder = isSecure ? "focus:border-neon-green/50" : "focus:border-neon-blue/50";
   const btnStyle = isSecure
     ? "bg-neon-green/20 text-neon-green border-neon-green/30 hover:bg-neon-green/30"
@@ -64,15 +105,47 @@ export function StoredXSSClient({
     <>
       {/* Comment Form */}
       <div className={`glass rounded-xl p-6 mb-6 ${isSecure ? "glow-green" : ""}`}>
-        <h2 className="text-lg font-semibold text-white mb-4">
-          Write a Review
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+            Write a Review
+          </h2>
+          {!isSecure && (
+            <div className="flex items-center gap-1.5 text-xs text-cyber-400">
+              <span className="text-neon-cyan font-semibold">Quick Payloads:</span>
+              <button
+                type="button"
+                onClick={() => setPayload("<img src=x onerror=alert('StoredXSS')>")}
+                className="px-2 py-0.5 rounded bg-cyber-800 hover:bg-cyber-700 text-neon-green font-mono text-[11px] border border-cyber-700 transition-colors"
+                title="Inject Image Onerror Payload"
+              >
+                &lt;img onerror&gt;
+              </button>
+              <button
+                type="button"
+                onClick={() => setPayload("<script>alert('StoredXSS')</script>")}
+                className="px-2 py-0.5 rounded bg-cyber-800 hover:bg-cyber-700 text-neon-yellow font-mono text-[11px] border border-cyber-700 transition-colors"
+                title="Inject Script Tag Payload"
+              >
+                &lt;script&gt;
+              </button>
+              <button
+                type="button"
+                onClick={() => setPayload("<svg onload=alert('StoredXSS')>")}
+                className="px-2 py-0.5 rounded bg-cyber-800 hover:bg-cyber-700 text-neon-red font-mono text-[11px] border border-cyber-700 transition-colors"
+                title="Inject SVG Onload Payload"
+              >
+                &lt;svg onload&gt;
+              </button>
+            </div>
+          )}
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="Your name"
+            placeholder="Your name or handle"
             className={`w-full px-4 py-3 bg-cyber-900 border border-cyber-700 rounded-lg text-white placeholder-cyber-600 focus:outline-none ${accentBorder}`}
           />
           <textarea
@@ -80,20 +153,34 @@ export function StoredXSSClient({
             onChange={(e) => setContent(e.target.value)}
             placeholder="Write your review... Try injecting HTML or script tags!"
             rows={4}
-            className={`w-full px-4 py-3 bg-cyber-900 border border-cyber-700 rounded-lg text-white placeholder-cyber-600 focus:outline-none ${accentBorder} resize-none`}
+            className={`w-full px-4 py-3 bg-cyber-900 border border-cyber-700 rounded-lg text-white placeholder-cyber-600 focus:outline-none ${accentBorder} resize-none font-mono text-sm`}
           />
-          <button
-            type="submit"
-            disabled={submitting}
-            className={`px-6 py-2 border rounded-lg transition-all disabled:opacity-50 ${btnStyle}`}
-          >
-            {submitting ? "Posting..." : "Post Review"}
-          </button>
+          <div className="flex items-center justify-between">
+            <button
+              type="submit"
+              disabled={submitting}
+              className={`px-6 py-2 border rounded-lg transition-all disabled:opacity-50 flex items-center gap-2 ${btnStyle}`}
+            >
+              <Send className="w-4 h-4" />
+              {submitting ? "Posting..." : "Post Review"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleResetReviews}
+              disabled={clearing || comments.length === 0}
+              className="px-3 py-1.5 text-xs text-cyber-500 hover:text-neon-red transition-colors flex items-center gap-1.5 disabled:opacity-40"
+              title="Clear all stored comments from database"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {clearing ? "Resetting..." : "Reset Reviews"}
+            </button>
+          </div>
         </form>
       </div>
 
       {/* Comments List */}
-      <div className="glass rounded-xl p-6">
+      <div className="glass rounded-xl p-6" ref={commentsContainerRef}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white">
             Reviews ({comments.length})
@@ -145,7 +232,7 @@ export function StoredXSSClient({
                 </div>
               ) : (
                 <div
-                  className="text-cyber-300 text-sm"
+                  className="vulnerable-comment-content text-cyber-300 text-sm"
                   dangerouslySetInnerHTML={{ __html: comment.content }}
                 />
               )}

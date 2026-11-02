@@ -204,6 +204,12 @@ export default function ScannerPage() {
       desc: "Searches threat database; parameter reflected raw",
     },
     {
+      url: "/labs/stored",
+      label: "Stored XSS Lab",
+      badge: "Vulnerable",
+      desc: "Comments persisted in DB and rendered unsanitized",
+    },
+    {
       url: "/labs/filter-bypass?q=test",
       label: "Filter Bypass Lab",
       badge: "Vulnerable",

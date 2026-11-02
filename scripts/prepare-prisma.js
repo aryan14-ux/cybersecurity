@@ -18,3 +18,4 @@ if ((dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) && fs
   }
   console.log('[Prisma] Using SQLite schema.');
 }
+

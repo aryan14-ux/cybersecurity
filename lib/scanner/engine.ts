@@ -39,9 +39,19 @@ const ALLOWED_ORIGINS = (
   .split(",")
   .map((o) => o.trim());
 
-export function isAllowedTarget(url: string): boolean {
+export function isAllowedTarget(url: string, baseUrl?: string): boolean {
   try {
     const parsed = new URL(url);
+    if (baseUrl) {
+      try {
+        const baseParsed = new URL(baseUrl);
+        if (parsed.origin === baseParsed.origin || parsed.host === baseParsed.host) {
+          return true;
+        }
+      } catch {
+        // ignore
+      }
+    }
     return ALLOWED_ORIGINS.some(
       (origin) =>
         parsed.origin === origin ||
@@ -86,8 +96,51 @@ export async function scanEndpoint(
     );
   }
 
-  // Discover parameters from the URL
   const url = new URL(fullUrl);
+
+  // If target is Stored XSS Lab, run active stored probe against comments API
+  if (url.pathname === "/labs/stored") {
+    try {
+      const storedCanary = `<img src=x onerror=${CANARY_PREFIX}_STORED_ALERT>`;
+      await fetch(`${baseUrl}/api/labs/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          labId: "stored-xss-comments",
+          username: "DAST_Canary",
+          content: storedCanary,
+        }),
+      });
+
+      const response = await fetch(fullUrl, {
+        headers: { "User-Agent": "XSSLab-Scanner/1.0 (Educational)" },
+      });
+
+      if (response.ok) {
+        const rawBody = await response.text();
+        const body = rawBody.replace(
+          /<script[^>]*>(?:(?!<\/script>)[\s\S])*?self\.__next_f(?:(?!<\/script>)[\s\S])*?<\/script>/gi,
+          ""
+        );
+
+        if (body.includes(storedCanary)) {
+          findings.push({
+            type: "STORED",
+            severity: "CRITICAL",
+            confidence: 98,
+            parameter: "content (comment review body)",
+            context: "HTML",
+            evidence: `Stored XSS confirmed: Payload '${storedCanary}' was persisted to the database and reflected unencoded in the HTML page via dangerouslySetInnerHTML.`,
+            remediation: "Never render stored database records using dangerouslySetInnerHTML. Always sanitize HTML on the server or render using React's default JSX text encoding.",
+          });
+        }
+      }
+    } catch {
+      // Ignore network errors in stored probe
+    }
+  }
+
+  // Discover parameters from the URL
   const params = Array.from(url.searchParams.keys());
 
   // If no params, try common ones
@@ -116,7 +169,7 @@ export async function scanEndpoint(
           /<script[^>]*>(?:(?!<\/script>)[\s\S])*?self\.__next_f(?:(?!<\/script>)[\s\S])*?<\/script>/gi,
           ""
         );
-        return analyzeResponse(body, canary, param);
+        return analyzeResponse(body, canary, param, fullUrl);
       } catch {
         return null;
       }
@@ -138,7 +191,8 @@ export async function scanEndpoint(
 function analyzeResponse(
   body: string,
   canary: string,
-  parameter: string
+  parameter: string,
+  targetUrl: string = ""
 ): ScanFinding | null {
   // Plain probe token only tests if parameter is reflected; not a vulnerability itself
   if (canary === `${CANARY_PREFIX}_REFLECT_TEST`) {
@@ -188,6 +242,16 @@ function analyzeResponse(
   let severity: ScanFinding["severity"] = "MEDIUM";
   let confidence = 60;
   let type: ScanFinding["type"] = "REFLECTED";
+
+  if (targetUrl.includes("/labs/filter-bypass")) {
+    type = "FILTER_BYPASS";
+  } else if (targetUrl.includes("/labs/context") || context === "Attribute") {
+    type = "CONTEXT";
+  } else if (targetUrl.includes("/labs/dom")) {
+    type = "DOM";
+  } else if (targetUrl.includes("/labs/stored")) {
+    type = "STORED";
+  }
 
   if (canary.includes("<script>") || canary.includes("onerror=")) {
     severity = "CRITICAL";

@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       : `${baseUrl}${targetUrl}`;
 
     // Validate target
-    if (!isAllowedTarget(fullUrl)) {
+    if (!isAllowedTarget(fullUrl, baseUrl)) {
       return NextResponse.json(
         {
           error:
@@ -74,66 +74,76 @@ export async function POST(req: Request) {
       );
     }
 
-    // Create scan record
-    const scan = await prisma.scan.create({
-      data: {
-        userId,
-        targetUrl: fullUrl,
-        labId: labId || null,
-        status: "RUNNING",
-      },
-    });
+    // Create scan record safely
+    let scanId = `scan-${Date.now()}`;
+    try {
+      const scan = await prisma.scan.create({
+        data: {
+          userId,
+          targetUrl: fullUrl,
+          labId: labId || null,
+          status: "RUNNING",
+        },
+      });
+      scanId = scan.id;
 
-    // Log security event
-    await prisma.securityEvent.create({
-      data: {
-        type: "SCANNER_EXECUTED",
-        severity: "LOW",
-        details: `XSS scan initiated against: ${fullUrl}`,
-        userId,
-        ip,
-      },
-    });
+      await prisma.securityEvent.create({
+        data: {
+          type: "SCANNER_EXECUTED",
+          severity: "LOW",
+          details: `XSS scan initiated against: ${fullUrl}`,
+          userId,
+          ip,
+        },
+      });
+    } catch (dbErr) {
+      console.warn("Could not record scan in database:", dbErr);
+    }
 
     // Run scan
     try {
       const findings = await scanEndpoint({ targetUrl: fullUrl, labId }, baseUrl);
 
-      // Save results
-      for (const finding of findings) {
-        await prisma.scanResult.create({
-          data: {
-            scanId: scan.id,
-            type: finding.type as "REFLECTED" | "STORED" | "DOM" | "FILTER_BYPASS" | "CONTEXT",
-            severity: finding.severity,
-            confidence: finding.confidence,
-            parameter: finding.parameter,
-            context: finding.context,
-            evidence: finding.evidence,
-            remediation: finding.remediation,
-          },
+      // Save results safely if DB is active
+      try {
+        for (const finding of findings) {
+          await prisma.scanResult.create({
+            data: {
+              scanId,
+              type: finding.type as "REFLECTED" | "STORED" | "DOM" | "FILTER_BYPASS" | "CONTEXT",
+              severity: finding.severity,
+              confidence: finding.confidence,
+              parameter: finding.parameter,
+              context: finding.context,
+              evidence: finding.evidence,
+              remediation: finding.remediation,
+            },
+          });
+        }
+
+        await prisma.scan.update({
+          where: { id: scanId },
+          data: { status: "COMPLETED" },
         });
+      } catch (saveErr) {
+        console.warn("Could not persist scan results in DB:", saveErr);
       }
 
-      // Update scan status
-      await prisma.scan.update({
-        where: { id: scan.id },
-        data: {
-          status: findings.length > 0 ? "COMPLETED" : "COMPLETED",
-        },
-      });
-
       return NextResponse.json({
-        scanId: scan.id,
+        scanId,
         status: "COMPLETED",
         findings,
         totalFindings: findings.length,
       });
     } catch (scanError) {
-      await prisma.scan.update({
-        where: { id: scan.id },
-        data: { status: "FAILED" },
-      });
+      try {
+        await prisma.scan.update({
+          where: { id: scanId },
+          data: { status: "FAILED" },
+        });
+      } catch {
+        // ignore
+      }
       throw scanError;
     }
   } catch (error) {
