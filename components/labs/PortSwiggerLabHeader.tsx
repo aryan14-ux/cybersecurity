@@ -18,6 +18,9 @@ import {
   Target,
   ArrowLeft,
   CheckCircle2,
+  X,
+  ArrowRight,
+  RotateCcw,
 } from "lucide-react";
 import { ConfettiCanvas } from "./ConfettiCanvas";
 import { playSuccessChime } from "@/lib/labs/oracle";
@@ -80,6 +83,14 @@ const LABS_REGISTRY: Record<string, LabMeta> = {
   },
 };
 
+const NEXT_LAB_MAP: Record<string, { name: string; path: string }> = {
+  reflected: { name: "Stored XSS Lab", path: "/labs/stored" },
+  stored: { name: "DOM XSS Lab", path: "/labs/dom" },
+  dom: { name: "Filter Bypass Lab", path: "/labs/filter-bypass" },
+  "filter-bypass": { name: "Context XSS Lab", path: "/labs/context" },
+  context: { name: "Labs Catalog", path: "/labs" },
+};
+
 export function PortSwiggerLabHeader() {
   const pathname = usePathname() || "";
   const searchParams = useSearchParams();
@@ -90,6 +101,7 @@ export function PortSwiggerLabHeader() {
   ) || "reflected";
 
   const labMeta = LABS_REGISTRY[labKey];
+  const nextLab = NEXT_LAB_MAP[labKey] || { name: "Labs Catalog", path: "/labs" };
   const isSecureMode = pathname.endsWith("/secure");
 
   const [isSolved, setIsSolved] = useState(false);
@@ -97,6 +109,8 @@ export function PortSwiggerLabHeader() {
   const [showHud, setShowHud] = useState(false);
   const [copiedPayload, setCopiedPayload] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [showCompletedModal, setShowCompletedModal] = useState(false);
+  const [executedPayload, setExecutedPayload] = useState("");
 
   // Check initial solved state
   useEffect(() => {
@@ -112,9 +126,13 @@ export function PortSwiggerLabHeader() {
 
   // Listen for exploit oracle trigger
   useEffect(() => {
-    const onExploitSuccess = () => {
+    const onExploitSuccess = (e: Event) => {
+      const customEvent = e as CustomEvent<any>;
+      const payload = customEvent?.detail?.payload || "";
+      setExecutedPayload(payload);
       setIsSolved(true);
       setShowConfetti(true);
+      setShowCompletedModal(true);
       playSuccessChime();
 
       try {
@@ -365,6 +383,89 @@ export function PortSwiggerLabHeader() {
               <Target className="w-3.5 h-3.5" />
               {resetting ? "Resetting..." : "Reset & Try Again"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Lab Completed Celebration Modal Pop-up */}
+      {showCompletedModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-cyber-950/85 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-md p-6 sm:p-8 bg-cyber-900 border-2 border-neon-green shadow-2xl rounded-2xl glow-green text-center">
+            {/* Close button */}
+            <button
+              onClick={() => setShowCompletedModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-cyber-400 hover:text-white hover:bg-cyber-800 transition-colors"
+              title="Dismiss modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Trophy Icon with glowing ring */}
+            <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-neon-green/20 border-2 border-neon-green flex items-center justify-center text-neon-green shadow-xl glow-green animate-bounce">
+              <Trophy className="w-10 h-10 text-neon-green" />
+            </div>
+
+            {/* Badge */}
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neon-green/20 border border-neon-green text-neon-green text-xs font-black tracking-widest uppercase mb-3">
+              <Sparkles className="w-3.5 h-3.5" />
+              LAB COMPLETED!
+            </div>
+
+            {/* Title & Description */}
+            <h2 className="text-2xl font-black text-white mb-2 tracking-tight">
+              Exploit Confirmed!
+            </h2>
+            <p className="text-cyber-300 text-xs sm:text-sm mb-5 leading-relaxed">
+              Congratulations! You successfully injected and executed arbitrary JavaScript on{" "}
+              <strong className="text-white block mt-1">{labMeta.title}</strong>
+            </p>
+
+            {/* Payload executed detail */}
+            {executedPayload && (
+              <div className="p-3 mb-6 bg-cyber-950/90 border border-cyber-800 rounded-xl text-left font-mono text-xs">
+                <span className="text-cyber-500 block text-[10px] uppercase font-bold mb-1">
+                  Triggered Payload:
+                </span>
+                <span className="text-neon-green break-all">
+                  {executedPayload}
+                </span>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Link
+                href={nextLab.path}
+                onClick={() => setShowCompletedModal(false)}
+                className="w-full py-3 px-4 rounded-xl bg-neon-green text-cyber-950 font-black text-xs uppercase tracking-wider hover:bg-neon-green/90 transition-all shadow-lg flex items-center justify-center gap-2 group"
+              >
+                <span>{nextLab.name === "Labs Catalog" ? "All Done! Catalog" : "Next Lab"}</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+
+              <button
+                onClick={() => {
+                  setShowCompletedModal(false);
+                  handleResetLab();
+                }}
+                disabled={resetting}
+                className="w-full py-3 px-4 rounded-xl bg-cyber-800 hover:bg-cyber-700 text-neon-yellow border border-neon-yellow/40 font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>{resetting ? "Resetting..." : "Reset Lab"}</span>
+              </button>
+            </div>
+
+            {/* Back link */}
+            <div className="mt-4 pt-2 border-t border-cyber-800/80">
+              <Link
+                href="/labs"
+                onClick={() => setShowCompletedModal(false)}
+                className="text-xs text-cyber-400 hover:text-neon-cyan transition-colors"
+              >
+                ← Back to All Labs
+              </Link>
+            </div>
           </div>
         </div>
       )}
