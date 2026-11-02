@@ -96,6 +96,7 @@ export function PortSwiggerLabHeader() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [showHud, setShowHud] = useState(false);
   const [copiedPayload, setCopiedPayload] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // Check initial solved state
   useEffect(() => {
@@ -148,6 +149,30 @@ export function PortSwiggerLabHeader() {
     setTimeout(() => setCopiedPayload(false), 2000);
   };
 
+  const handleResetLab = async () => {
+    setResetting(true);
+    try {
+      // Clear localStorage
+      localStorage.removeItem(`xss_solved_${labMeta.slug}`);
+      localStorage.removeItem("xss_last_exploit");
+
+      // Clear DB progress
+      await fetch("/api/labs/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labSlug: labMeta.slug }),
+      });
+
+      setIsSolved(false);
+      window.location.reload();
+    } catch {
+      // Still reset local state
+      setIsSolved(false);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <>
       <ConfettiCanvas active={showConfetti} />
@@ -191,15 +216,26 @@ export function PortSwiggerLabHeader() {
           </div>
 
           {/* Center: Animated Exploit Status Pill */}
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 flex items-center gap-2">
             {isSolved ? (
-              <div className="flex items-center rounded-lg overflow-hidden border border-neon-green/60 bg-neon-green/15 text-neon-green px-3 py-1 shadow-lg glow-green animate-bounce">
-                <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                <span className="text-xs font-extrabold uppercase tracking-wider">
-                  Exploit Confirmed • Solved!
-                </span>
-                <Sparkles className="w-3.5 h-3.5 ml-1.5 hidden sm:inline" />
-              </div>
+              <>
+                <div className="flex items-center rounded-lg overflow-hidden border border-neon-green/60 bg-neon-green/15 text-neon-green px-3 py-1 shadow-lg glow-green">
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                  <span className="text-xs font-extrabold uppercase tracking-wider">
+                    Solved!
+                  </span>
+                  <Sparkles className="w-3.5 h-3.5 ml-1.5 hidden sm:inline" />
+                </div>
+                <button
+                  onClick={handleResetLab}
+                  disabled={resetting}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-neon-yellow/40 bg-neon-yellow/10 text-neon-yellow hover:bg-neon-yellow/20 transition-all disabled:opacity-50"
+                  title="Reset this lab to try again"
+                >
+                  <Target className="w-3 h-3" />
+                  {resetting ? "Resetting..." : "Reset Lab"}
+                </button>
+              </>
             ) : (
               <div className="flex items-center rounded-lg overflow-hidden border border-cyber-700 bg-cyber-900/80 px-2.5 py-1 text-xs">
                 <span className="relative flex h-2 w-2 mr-2">
@@ -320,6 +356,15 @@ export function PortSwiggerLabHeader() {
                 Verified by In-Browser Exploit Oracle
               </p>
             </div>
+            <button
+              onClick={handleResetLab}
+              disabled={resetting}
+              className="ml-2 px-3 py-1.5 rounded-lg text-xs font-bold border border-neon-yellow/50 bg-neon-yellow/15 text-neon-yellow hover:bg-neon-yellow/25 transition-all shadow disabled:opacity-50 flex items-center gap-1.5"
+              title="Reset progress to exploit this lab again"
+            >
+              <Target className="w-3.5 h-3.5" />
+              {resetting ? "Resetting..." : "Reset & Try Again"}
+            </button>
           </div>
         </div>
       )}

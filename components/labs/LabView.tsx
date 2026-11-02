@@ -27,6 +27,7 @@ import {
   CheckCircle,
   XCircle,
   HelpCircle,
+  RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 import { playSuccessChime } from "@/lib/labs/oracle";
@@ -140,6 +141,35 @@ export function LabView({ lab, progress }: LabViewProps) {
       window.removeEventListener("xss-exploit-success", handleExploit);
     };
   }, []);
+
+  const [resetting, setResetting] = useState(false);
+
+  const handleResetLab = async () => {
+    setResetting(true);
+    try {
+      localStorage.removeItem(`xss_solved_${lab.slug}`);
+      localStorage.removeItem("xss_last_exploit");
+
+      await fetch("/api/labs/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labSlug: lab.slug }),
+      });
+
+      setCompleted(false);
+      setSolvedSlugs((prev) => {
+        const next = { ...prev };
+        delete next[lab.slug];
+        return next;
+      });
+      window.location.reload();
+    } catch (err) {
+      console.warn("Reset lab error:", err);
+      setCompleted(false);
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -283,12 +313,23 @@ export function LabView({ lab, progress }: LabViewProps) {
                 {difficultyTier}
               </span>
 
-              {/* Solved Status Pill */}
+              {/* Solved Status Pill & Reset Button */}
               {completed ? (
-                <div className="flex items-center rounded-lg overflow-hidden border border-neon-green/60 bg-neon-green/15 text-neon-green px-3 py-1 text-xs font-bold shadow-lg glow-green animate-bounce">
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 stroke-[3]" />
-                  <span>STATUS: SOLVED</span>
-                  <Sparkles className="w-3.5 h-3.5 ml-1.5" />
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center rounded-lg overflow-hidden border border-neon-green/60 bg-neon-green/15 text-neon-green px-3 py-1 text-xs font-bold shadow-lg glow-green">
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 stroke-[3]" />
+                    <span>STATUS: SOLVED</span>
+                    <Sparkles className="w-3.5 h-3.5 ml-1.5" />
+                  </div>
+                  <button
+                    onClick={handleResetLab}
+                    disabled={resetting}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-neon-yellow/40 bg-neon-yellow/10 text-neon-yellow hover:bg-neon-yellow/20 transition-all disabled:opacity-50"
+                    title="Reset this lab and try again"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>{resetting ? "Resetting..." : "Reset"}</span>
+                  </button>
                 </div>
               ) : (
                 <div className="flex items-center rounded-lg overflow-hidden border border-cyber-700 bg-cyber-900/90 text-cyber-300 px-3 py-1 text-xs font-medium">

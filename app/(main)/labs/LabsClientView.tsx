@@ -20,6 +20,7 @@ import {
   Trophy,
   Sparkles,
   Flame,
+  RotateCcw,
 } from "lucide-react";
 
 interface Lab {
@@ -73,6 +74,53 @@ const categoryColors: Record<string, string> = {
 export function LabsClientView({ labs, initialProgress }: LabsClientViewProps) {
   // Map of labId or labSlug -> boolean completed
   const [solvedMap, setSolvedMap] = useState<Record<string, boolean>>({});
+  const [resettingAll, setResettingAll] = useState(false);
+
+  const handleResetAllLabs = async () => {
+    if (!confirm("Are you sure you want to reset all lab progress and start fresh?")) return;
+    setResettingAll(true);
+    try {
+      for (const lab of labs) {
+        localStorage.removeItem(`xss_solved_${lab.slug}`);
+      }
+      localStorage.removeItem("xss_last_exploit");
+
+      await fetch("/api/labs/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labSlug: "ALL" }),
+      });
+
+      setSolvedMap({});
+      window.location.reload();
+    } catch (err) {
+      console.warn("Reset all error:", err);
+      setSolvedMap({});
+    } finally {
+      setResettingAll(false);
+    }
+  };
+
+  const handleResetSpecificLab = async (slug: string) => {
+    try {
+      localStorage.removeItem(`xss_solved_${slug}`);
+      await fetch("/api/labs/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labSlug: slug }),
+      });
+
+      setSolvedMap((prev) => {
+        const next = { ...prev };
+        delete next[slug];
+        const lab = labs.find((l) => l.slug === slug);
+        if (lab) delete next[lab.id];
+        return next;
+      });
+    } catch (err) {
+      console.warn("Reset lab error:", err);
+    }
+  };
 
   useEffect(() => {
     const map: Record<string, boolean> = {};
@@ -179,13 +227,26 @@ export function LabsClientView({ labs, initialProgress }: LabsClientViewProps) {
               </div>
             </div>
 
-            <div className="text-right flex items-center sm:block gap-2">
-              <span className="text-2xl font-black text-neon-green font-mono">
-                {progressPercent}%
-              </span>
-              <span className="text-[11px] text-cyber-500 uppercase block font-semibold">
-                Completed
-              </span>
+            <div className="flex items-center gap-3">
+              {solvedCount > 0 && (
+                <button
+                  onClick={handleResetAllLabs}
+                  disabled={resettingAll}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold border border-neon-yellow/40 bg-neon-yellow/10 text-neon-yellow hover:bg-neon-yellow/20 transition-all flex items-center gap-1.5 shadow"
+                  title="Reset all solved labs and start fresh"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{resettingAll ? "Resetting..." : "Reset All Labs"}</span>
+                </button>
+              )}
+              <div className="text-right">
+                <span className="text-2xl font-black text-neon-green font-mono">
+                  {progressPercent}%
+                </span>
+                <span className="text-[11px] text-cyber-500 uppercase block font-semibold">
+                  Completed
+                </span>
+              </div>
             </div>
           </div>
 
@@ -272,12 +333,26 @@ export function LabsClientView({ labs, initialProgress }: LabsClientViewProps) {
                       {/* Top Right Solved Indicator */}
                       <div className="absolute top-4 right-4 z-10">
                         {isCompleted ? (
-                          <div
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neon-green/20 border border-neon-green text-neon-green text-xs font-black tracking-wider shadow-lg glow-green animate-in fade-in zoom-in duration-300"
-                            title="You have successfully solved this lab!"
-                          >
-                            <CheckCircle2 className="w-4 h-4 text-neon-green stroke-[3]" />
-                            <span>SOLVED</span>
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-neon-green/20 border border-neon-green text-neon-green text-xs font-black tracking-wider shadow-lg glow-green animate-in fade-in zoom-in duration-300"
+                              title="You have successfully solved this lab!"
+                            >
+                              <CheckCircle2 className="w-4 h-4 text-neon-green stroke-[3]" />
+                              <span>SOLVED</span>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleResetSpecificLab(lab.slug);
+                              }}
+                              className="px-2 py-1 rounded-full bg-cyber-900/90 hover:bg-neon-yellow/20 text-cyber-400 hover:text-neon-yellow border border-cyber-700 text-[10px] font-mono transition-colors flex items-center gap-1"
+                              title="Reset this lab to unsolved"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Reset</span>
+                            </button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyber-900/80 border border-cyber-700 text-cyber-400 text-[10px] font-mono">

@@ -1,6 +1,7 @@
 "use client";
 
-import { CheckCircle2, Sparkles, Trophy, Zap, AlertCircle } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Sparkles, Trophy, Zap, AlertCircle, RotateCcw } from "lucide-react";
 
 interface SolvedBannerProps {
   completed: boolean;
@@ -8,6 +9,8 @@ interface SolvedBannerProps {
   points: number;
   lastPayload?: string;
   justSolved?: boolean;
+  labSlug?: string;
+  onReset?: () => void;
 }
 
 export function SolvedBanner({
@@ -16,7 +19,36 @@ export function SolvedBanner({
   points,
   lastPayload,
   justSolved = false,
+  labSlug,
+  onReset,
 }: SolvedBannerProps) {
+  const [resetting, setResetting] = useState(false);
+
+  const handleReset = async () => {
+    if (!labSlug) return;
+    setResetting(true);
+    try {
+      localStorage.removeItem(`xss_solved_${labSlug}`);
+      localStorage.removeItem("xss_last_exploit");
+
+      await fetch("/api/labs/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ labSlug }),
+      });
+
+      if (onReset) {
+        onReset();
+      } else {
+        window.location.reload();
+      }
+    } catch (err) {
+      console.warn("Reset error:", err);
+      window.location.reload();
+    } finally {
+      setResetting(false);
+    }
+  };
   if (!completed) {
     return (
       <div className="mb-6 p-4 bg-cyber-900/60 border border-cyber-700/60 rounded-xl flex items-center justify-between shadow-lg">
@@ -88,10 +120,21 @@ export function SolvedBanner({
           </div>
         </div>
 
-        <div className="text-right flex-shrink-0 self-end sm:self-center">
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-2 flex-shrink-0 self-end sm:self-center">
           <span className="px-3 py-1.5 rounded-lg bg-cyber-950/90 border border-neon-green/40 text-neon-green font-mono text-xs font-bold">
             VERIFIED BY EXPLOIT ORACLE
           </span>
+          {labSlug && (
+            <button
+              onClick={handleReset}
+              disabled={resetting}
+              className="px-3 py-1.5 rounded-lg bg-neon-yellow/10 border border-neon-yellow/40 hover:bg-neon-yellow/20 text-neon-yellow font-semibold text-xs transition-all flex items-center gap-1.5 disabled:opacity-50"
+              title="Reset this lab and attempt again"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              {resetting ? "Resetting..." : "Reset Lab"}
+            </button>
+          )}
         </div>
       </div>
     </div>
