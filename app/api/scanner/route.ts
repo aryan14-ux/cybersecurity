@@ -18,7 +18,7 @@ export async function POST(req: Request) {
     // Rate limit scanner - generous limit in dev
     const limit = process.env.NODE_ENV === "production" 
       ? parseInt(process.env.SCANNER_RATE_LIMIT_PER_HOUR || "30", 10) 
-      : 100;
+      : 1000;
     const { success: rateLimitOk } = rateLimit(
       `scanner:${userId}`,
       limit,

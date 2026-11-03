@@ -112,12 +112,42 @@ export function PortSwiggerLabHeader() {
   const [showCompletedModal, setShowCompletedModal] = useState(false);
   const [executedPayload, setExecutedPayload] = useState("");
 
-  // Check initial solved state
+  // Check initial solved state and handle pending celebratory modal
   useEffect(() => {
     try {
       const solvedKey = `xss_solved_${labMeta.slug}`;
-      if (localStorage.getItem(solvedKey) === "true") {
+      const isMarkedSolved = localStorage.getItem(solvedKey) === "true";
+      if (isMarkedSolved) {
         setIsSolved(true);
+      }
+
+      // Check if this lab was solved just now during page load/SSR
+      const justSolvedRaw = sessionStorage.getItem(`xss_just_solved_${labMeta.slug}`);
+      const lastExploit = (window as any).__XSS_LAST_EXPLOIT__;
+
+      if (justSolvedRaw || (lastExploit && lastExploit.labSlug === labMeta.slug)) {
+        let payload = "";
+        if (justSolvedRaw) {
+          try {
+            const parsed = JSON.parse(justSolvedRaw);
+            payload = parsed.payload || "";
+          } catch {
+            // ignore
+          }
+          sessionStorage.removeItem(`xss_just_solved_${labMeta.slug}`);
+        } else if (lastExploit) {
+          payload = lastExploit.payload || "";
+        }
+
+        if (payload) {
+          setExecutedPayload(payload);
+        }
+        setIsSolved(true);
+        setShowConfetti(true);
+        setShowCompletedModal(true);
+        playSuccessChime();
+
+        setTimeout(() => setShowConfetti(false), 5000);
       }
     } catch {
       // ignore
@@ -170,11 +200,15 @@ export function PortSwiggerLabHeader() {
   const handleResetLab = async () => {
     setResetting(true);
     try {
-      // Clear localStorage
+      // Clear localStorage & sessionStorage
       localStorage.removeItem(`xss_solved_${labMeta.slug}`);
       localStorage.removeItem("xss_last_exploit");
+      sessionStorage.removeItem(`xss_just_solved_${labMeta.slug}`);
+      if (typeof window !== "undefined") {
+        delete (window as any).__XSS_LAST_EXPLOIT__;
+      }
 
-      // Clear DB progress
+      // Clear DB progress and comments
       await fetch("/api/labs/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -182,10 +216,15 @@ export function PortSwiggerLabHeader() {
       });
 
       setIsSolved(false);
-      window.location.reload();
+      setShowCompletedModal(false);
+
+      // Clean redirect to strip any injection payloads from the URL query or hash
+      window.location.href = labMeta.vulnPath;
     } catch {
-      // Still reset local state
+      // Still reset local state and redirect cleanly
       setIsSolved(false);
+      setShowCompletedModal(false);
+      window.location.href = labMeta.vulnPath;
     } finally {
       setResetting(false);
     }
@@ -406,17 +445,17 @@ export function PortSwiggerLabHeader() {
             </div>
 
             {/* Badge */}
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neon-green/20 border border-neon-green text-neon-green text-xs font-black tracking-widest uppercase mb-3">
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-neon-green/20 border border-neon-green text-neon-green text-xs font-black tracking-widest uppercase mb-3">
               <Sparkles className="w-3.5 h-3.5" />
               LAB COMPLETED!
             </div>
 
             {/* Title & Description */}
-            <h2 className="text-2xl font-black text-white mb-2 tracking-tight">
-              Exploit Confirmed!
+            <h2 className="text-2xl sm:text-3xl font-black text-white mb-2 tracking-tight">
+              You Have Solved The Lab!
             </h2>
             <p className="text-cyber-300 text-xs sm:text-sm mb-5 leading-relaxed">
-              Congratulations! You successfully injected and executed arbitrary JavaScript on{" "}
+              Congratulations! You successfully bypassed security defenses and executed arbitrary JavaScript on{" "}
               <strong className="text-white block mt-1">{labMeta.title}</strong>
             </p>
 

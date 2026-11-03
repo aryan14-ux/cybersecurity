@@ -175,6 +175,12 @@ export default function ScannerPage() {
     try {
       const base = activeScanMeta.url;
       const payload = getSuggestedPayload(finding);
+      if (base.includes("/labs/dom")) {
+        return `/labs/dom#${encodeURIComponent(payload)}`;
+      }
+      if (base.includes("/labs/stored")) {
+        return `/labs/stored`;
+      }
       const url = new URL(base, "http://localhost:3000");
       url.searchParams.set(finding.parameter, payload);
       return `${url.pathname}${url.search}`;
@@ -208,6 +214,12 @@ export default function ScannerPage() {
       label: "Stored XSS Lab",
       badge: "Vulnerable",
       desc: "Comments persisted in DB and rendered unsanitized",
+    },
+    {
+      url: "/labs/dom",
+      label: "DOM XSS Lab",
+      badge: "Vulnerable",
+      desc: "Client-side hash fragment sink (location.hash -> innerHTML)",
     },
     {
       url: "/labs/filter-bypass?q=test",

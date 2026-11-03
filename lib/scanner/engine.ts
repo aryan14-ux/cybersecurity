@@ -84,7 +84,7 @@ export async function scanEndpoint(
     ? targetUrl
     : `${baseUrl}${targetUrl}`;
 
-  if (!isAllowedTarget(fullUrl)) {
+  if (!isAllowedTarget(fullUrl, baseUrl)) {
     throw new Error(
       "Target is not in the allowed scan list. Scanner can only scan authorized lab endpoints."
     );
@@ -97,6 +97,31 @@ export async function scanEndpoint(
   }
 
   const url = new URL(fullUrl);
+
+  // If target is DOM XSS Lab or endpoint contains DOM sinks
+  if (url.pathname === "/labs/dom") {
+    try {
+      const response = await fetch(fullUrl, {
+        headers: { "User-Agent": "XSSLab-Scanner/1.0 (Educational)" },
+      });
+      if (response.ok) {
+        const body = await response.text();
+        if (body.includes("location.hash") && body.includes("innerHTML")) {
+          findings.push({
+            type: "DOM",
+            severity: "HIGH",
+            confidence: 90,
+            parameter: "location.hash (URL Fragment)",
+            context: "DOM Sink (element.innerHTML)",
+            evidence: "Client-side DOM XSS identified: Page reads unsanitized user data from 'location.hash' and assigns it directly to 'element.innerHTML'.",
+            remediation: "Never assign unsanitized URL fragments (location.hash) directly to element.innerHTML. Use element.textContent or sanitize using DOMPurify before rendering.",
+          });
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }
 
   // If target is Stored XSS Lab, run active stored probe against comments API
   if (url.pathname === "/labs/stored") {

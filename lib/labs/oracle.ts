@@ -68,7 +68,8 @@ export function initExploitOracle(pathname: string) {
   const originalPrompt = window.prompt;
 
   const handleExploit = (triggerType: string, message: any) => {
-    const slug = getSlugFromPath(pathname);
+    const currentPath = window.location.pathname || pathname;
+    const slug = getSlugFromPath(currentPath);
     const detail: ExploitEventDetail = {
       type: triggerType,
       labSlug: slug,
@@ -91,10 +92,12 @@ export function initExploitOracle(pathname: string) {
       // Cross-origin message safety
     }
 
-    // Save to localStorage for cross-tab synchronisation
+    // Save to localStorage & sessionStorage for instant popup display
     try {
       localStorage.setItem("xss_last_exploit", JSON.stringify(detail));
       localStorage.setItem(`xss_solved_${slug}`, "true");
+      sessionStorage.setItem(`xss_just_solved_${slug}`, JSON.stringify(detail));
+      (window as any).__XSS_LAST_EXPLOIT__ = detail;
     } catch {
       // Storage unavailable
     }
@@ -105,17 +108,37 @@ export function initExploitOracle(pathname: string) {
 
   window.alert = function (msg?: any) {
     handleExploit("alert", msg);
-    return originalAlert.call(window, msg);
+    setTimeout(() => {
+      try {
+        originalAlert.call(window, msg);
+      } catch {
+        // ignore
+      }
+    }, 50);
   };
 
   window.confirm = function (msg?: any) {
     handleExploit("confirm", msg);
-    return originalConfirm.call(window, msg);
+    setTimeout(() => {
+      try {
+        originalConfirm.call(window, msg);
+      } catch {
+        // ignore
+      }
+    }, 50);
+    return true;
   };
 
   window.prompt = function (msg?: any, _default?: any) {
     handleExploit("prompt", msg);
-    return originalPrompt.call(window, msg, _default);
+    setTimeout(() => {
+      try {
+        originalPrompt.call(window, msg, _default);
+      } catch {
+        // ignore
+      }
+    }, 50);
+    return "";
   };
 
   return () => {
