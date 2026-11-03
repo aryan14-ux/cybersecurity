@@ -101,9 +101,18 @@ export default function ScannerPage() {
     setScanStep("Initiating canary probes against target...");
 
     try {
-      const fullTarget = effectiveUrl.startsWith("/")
-        ? `${window.location.origin}${effectiveUrl}`
-        : effectiveUrl;
+      let normalizedTarget = effectiveUrl;
+      if (!normalizedTarget.startsWith("http://") && !normalizedTarget.startsWith("https://") && !normalizedTarget.startsWith("/")) {
+        if (normalizedTarget.startsWith("localhost") || normalizedTarget.startsWith("127.0.0.1") || normalizedTarget.includes(":3000")) {
+          normalizedTarget = `http://${normalizedTarget}`;
+        } else {
+          normalizedTarget = `/${normalizedTarget}`;
+        }
+      }
+
+      const fullTarget = normalizedTarget.startsWith("/")
+        ? `${window.location.origin}${normalizedTarget}`
+        : normalizedTarget;
 
       setTimeout(() => {
         setScanStep("Sending XSS syntax-breakers & event handler canaries...");

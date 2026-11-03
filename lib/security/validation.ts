@@ -25,7 +25,17 @@ export const labAttemptSchema = z.object({
 });
 
 export const scanRequestSchema = z.object({
-  targetUrl: z.string().min(1, "Target URL is required").refine(
+  targetUrl: z.string().min(1, "Target URL is required").transform((val) => {
+    let normalized = val.trim();
+    if (!normalized.startsWith("http://") && !normalized.startsWith("https://") && !normalized.startsWith("/")) {
+      if (normalized.startsWith("localhost") || normalized.startsWith("127.0.0.1") || normalized.includes(":3000")) {
+        normalized = `http://${normalized}`;
+      } else {
+        normalized = `/${normalized}`;
+      }
+    }
+    return normalized;
+  }).refine(
     (val) => {
       if (val.startsWith("/")) return true;
       try {

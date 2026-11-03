@@ -21,6 +21,10 @@ import {
   X,
   ArrowRight,
   RotateCcw,
+  Search,
+  Loader2,
+  Play,
+  ExternalLink,
 } from "lucide-react";
 import { ConfettiCanvas } from "./ConfettiCanvas";
 import { playSuccessChime } from "@/lib/labs/oracle";
@@ -111,6 +115,59 @@ export function PortSwiggerLabHeader() {
   const [resetting, setResetting] = useState(false);
   const [showCompletedModal, setShowCompletedModal] = useState(false);
   const [executedPayload, setExecutedPayload] = useState("");
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerLoading, setScannerLoading] = useState(false);
+  const [scannerFindings, setScannerFindings] = useState<any[]>([]);
+  const [scannerRan, setScannerRan] = useState(false);
+
+  const handleRunInLabScanner = async () => {
+    setShowScanner(true);
+    setScannerLoading(true);
+    try {
+      const res = await fetch("/api/scanner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUrl: pathname || labMeta.vulnPath }),
+      });
+      const data = await res.json();
+      setScannerFindings(data?.findings || []);
+      setScannerRan(true);
+    } catch {
+      setScannerFindings([]);
+      setScannerRan(true);
+    } finally {
+      setScannerLoading(false);
+    }
+  };
+
+  const handleAutoInjectExploit = (finding: any) => {
+    let payload = labMeta.defaultPayload;
+    if (finding?.context === "Attribute") {
+      payload = '" onfocus="alert(1)" autofocus="';
+    } else if (finding?.context === "JavaScript") {
+      payload = "'-alert(1)-'";
+    } else {
+      payload = "<img src=x onerror=alert(1)>";
+    }
+
+    if (labKey === "dom") {
+      window.location.hash = payload;
+      const domOutput = document.getElementById("dom-output");
+      if (domOutput) domOutput.innerHTML = payload;
+    } else if (labKey === "context") {
+      window.location.href = `/labs/context?user=${encodeURIComponent(payload)}`;
+    } else if (labKey === "filter-bypass") {
+      window.location.href = `/labs/filter-bypass?q=${encodeURIComponent(payload)}`;
+    } else if (labKey === "stored") {
+      const commentInput = document.querySelector('textarea') as HTMLTextAreaElement;
+      if (commentInput) {
+        commentInput.value = payload;
+        commentInput.focus();
+      }
+    } else {
+      window.location.href = `/labs/reflected?q=${encodeURIComponent(payload)}`;
+    }
+  };
 
   // Check initial solved state and handle pending celebratory modal
   useEffect(() => {
@@ -337,7 +394,10 @@ export function PortSwiggerLabHeader() {
 
             {/* Differentiator 2: In-Page Taint HUD Drawer */}
             <button
-              onClick={() => setShowHud(!showHud)}
+              onClick={() => {
+                setShowHud(!showHud);
+                if (showScanner) setShowScanner(false);
+              }}
               className="flex items-center gap-1 px-3 py-1.5 bg-cyber-900 border border-cyber-700 hover:border-cyber-600 rounded-lg text-xs font-medium text-cyber-300 hover:text-white transition-all"
               title="Toggle Live Taint & Payload HUD"
             >
@@ -349,50 +409,114 @@ export function PortSwiggerLabHeader() {
                 <ChevronDown className="w-3 h-3 text-cyber-400" />
               )}
             </button>
+
+            {/* Differentiator 3: In-Lab DAST Scanner */}
+            <button
+              onClick={() => {
+                setShowScanner(!showScanner);
+                if (showHud) setShowHud(false);
+                if (!showScanner && !scannerRan) {
+                  handleRunInLabScanner();
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-neon-blue/15 border border-neon-blue/50 hover:bg-neon-blue/25 text-neon-blue rounded-lg text-xs font-bold transition-all shadow-sm glow-blue"
+              title="Scan this target lab with dynamic XSS scanner"
+            >
+              {scannerLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Zap className="w-3.5 h-3.5 fill-current" />
+              )}
+              <span>{scannerLoading ? "Scanning..." : "DAST Scanner"}</span>
+            </button>
           </div>
         </div>
 
         {/* Gradient Cyber Line */}
         <div className="h-[2px] bg-gradient-to-r from-neon-green via-neon-blue to-neon-purple w-full opacity-60" />
 
-        {/* Dropdown Taint HUD Drawer */}
-        {showHud && (
-          <div className="bg-cyber-900/98 border-b border-cyber-800 px-4 py-3 shadow-2xl animate-in slide-in-from-top duration-200">
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
-              <div className="space-y-1">
+        {/* Dropdown DAST Scanner Drawer */}
+        {showScanner && (
+          <div className="bg-cyber-900/98 border-b border-cyber-800 px-4 py-4 shadow-2xl animate-in slide-in-from-top duration-200">
+            <div className="max-w-7xl mx-auto space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-cyber-800 pb-2">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-neon-cyan uppercase tracking-wider text-[10px]">
-                    Live Taint Inspector
+                  <Zap className="w-4 h-4 text-neon-blue" />
+                  <span className="font-bold text-white text-xs uppercase tracking-wider">
+                    In-Lab DAST Scanner Telemetry
                   </span>
-                  <span className="text-cyber-600">•</span>
-                  <span className="text-cyber-400">
-                    Sink: <code className="font-mono text-neon-green">{labMeta.sinkDescription}</code>
+                  <span className="text-cyber-500 text-[11px] font-mono">
+                    Target: {pathname || labMeta.vulnPath}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 font-mono text-[11px] text-cyber-400">
-                  <span>Detected Payload:</span>
-                  <span className="text-neon-yellow bg-cyber-950 px-2 py-0.5 rounded border border-cyber-800">
-                    {currentQuery || "(none detected in query parameter)"}
-                  </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleRunInLabScanner}
+                    disabled={scannerLoading}
+                    className="px-3 py-1 bg-neon-blue/20 hover:bg-neon-blue/30 text-neon-blue border border-neon-blue/40 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {scannerLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 fill-current" />}
+                    <span>{scannerLoading ? "Scanning..." : "Re-Scan Lab"}</span>
+                  </button>
+                  <Link
+                    href={`/scanner`}
+                    className="px-2.5 py-1 bg-cyber-800 hover:bg-cyber-700 text-cyber-300 rounded-lg text-xs font-semibold flex items-center gap-1"
+                  >
+                    <span>Full Scanner Hub</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </Link>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <code className="font-mono text-cyber-300 bg-cyber-950 px-3 py-1.5 rounded border border-cyber-800 text-xs">
-                  {labMeta.defaultPayload}
-                </code>
-                <button
-                  onClick={() => handleCopy(labMeta.defaultPayload)}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/40 hover:bg-neon-cyan/30 rounded font-semibold transition-all text-xs"
+              {scannerLoading && (
+                <div className="p-4 bg-cyber-950/70 border border-cyber-800 rounded-xl flex items-center gap-3 text-xs text-cyber-300 font-mono">
+                  <Loader2 className="w-4 h-4 animate-spin text-neon-blue" />
+                  <span>Probing target endpoint with syntax-breakers, event handlers, and active canaries...</span>
+                </div>
+              )}
+
+              {!scannerLoading && scannerRan && scannerFindings.length === 0 && (
+                <div className="p-3 bg-neon-green/10 border border-neon-green/30 rounded-xl text-xs text-cyber-200 flex items-center justify-between">
+                  <span className="text-neon-green font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Target verified clean (0 vulnerable reflection sinks detected in active probes).
+                  </span>
+                </div>
+              )}
+
+              {!scannerLoading && scannerFindings.map((finding, idx) => (
+                <div
+                  key={idx}
+                  className="p-3.5 bg-cyber-950/90 border border-neon-blue/30 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
                 >
-                  {copiedPayload ? (
-                    <Check className="w-3.5 h-3.5 text-neon-green" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5" />
-                  )}
-                  {copiedPayload ? "Copied!" : "Copy Payload"}
-                </button>
-              </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded font-bold uppercase text-[10px] bg-neon-red/20 text-neon-red border border-neon-red/40">
+                        {finding.severity}
+                      </span>
+                      <strong className="text-white">
+                        {finding.type} XSS Vulnerability Found
+                      </strong>
+                      <span className="text-neon-green font-mono text-[10px]">
+                        ({finding.confidence}% confidence)
+                      </span>
+                    </div>
+                    <p className="text-cyber-400 text-[11px] font-mono">
+                      Vulnerable Parameter: <span className="text-neon-cyan">{finding.parameter}</span> | Context: <span className="text-neon-yellow">{finding.context}</span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => handleAutoInjectExploit(finding)}
+                      className="px-4 py-2 bg-gradient-to-r from-neon-green/20 to-neon-green/30 text-neon-green border border-neon-green/60 hover:bg-neon-green/40 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-md glow-green cursor-pointer"
+                    >
+                      <Target className="w-3.5 h-3.5" />
+                      Auto-Inject &amp; Solve Lab
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

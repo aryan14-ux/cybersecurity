@@ -77,7 +77,23 @@ export async function scanEndpoint(
   baseUrl: string
 ): Promise<ScanFinding[]> {
   const findings: ScanFinding[] = [];
-  const targetUrl = config.targetUrl;
+  let targetUrl = config.targetUrl;
+
+  // Resolve lab slugs (e.g. /labs/reflected-xss-search -> /labs/reflected?q=test)
+  const SLUG_MAP: Record<string, string> = {
+    "reflected-xss-search": "/labs/reflected?q=test",
+    "stored-xss-comments": "/labs/stored",
+    "dom-xss-client": "/labs/dom",
+    "filter-bypass-xss": "/labs/filter-bypass?q=test",
+    "context-xss-attribute": "/labs/context?user=test",
+  };
+
+  for (const [slug, mappedEndpoint] of Object.entries(SLUG_MAP)) {
+    if (targetUrl.includes(slug)) {
+      targetUrl = mappedEndpoint;
+      break;
+    }
+  }
 
   // Validate target is authorized
   const fullUrl = targetUrl.startsWith("http")
@@ -99,7 +115,7 @@ export async function scanEndpoint(
   const url = new URL(fullUrl);
 
   // If target is DOM XSS Lab or endpoint contains DOM sinks
-  if (url.pathname === "/labs/dom") {
+  if (url.pathname.includes("/labs/dom")) {
     try {
       const response = await fetch(fullUrl, {
         headers: { "User-Agent": "XSSLab-Scanner/1.0 (Educational)" },
@@ -124,7 +140,7 @@ export async function scanEndpoint(
   }
 
   // If target is Stored XSS Lab, run active stored probe against comments API
-  if (url.pathname === "/labs/stored") {
+  if (url.pathname.includes("/labs/stored")) {
     try {
       const storedCanary = `<img src=x onerror=${CANARY_PREFIX}_STORED_ALERT>`;
       await fetch(`${baseUrl}/api/labs/comments`, {
@@ -165,12 +181,17 @@ export async function scanEndpoint(
     }
   }
 
-  // Discover parameters from the URL
-  const params = Array.from(url.searchParams.keys());
-
-  // If no params, try common ones
-  const testParams =
-    params.length > 0 ? params : ["q", "search", "query", "user", "input"];
+  // Discover parameters from the URL or pick best default for the specific lab
+  let testParams = Array.from(url.searchParams.keys());
+  if (testParams.length === 0) {
+    if (url.pathname.includes("/labs/context")) {
+      testParams = ["user"];
+    } else if (url.pathname.includes("/labs/reflected") || url.pathname.includes("/labs/filter-bypass")) {
+      testParams = ["q"];
+    } else {
+      testParams = ["q", "search", "query", "user", "input"];
+    }
+  }
 
   for (const param of testParams) {
     const promises = CANARY_TOKENS.map(async (canary) => {
@@ -180,7 +201,7 @@ export async function scanEndpoint(
 
         const response = await fetch(testUrl.toString(), {
           redirect: "follow",
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(8000),
           headers: {
             "User-Agent": "XSSLab-Scanner/1.0 (Educational)",
           },

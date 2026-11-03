@@ -377,6 +377,14 @@ export function LabView({ lab, progress }: LabViewProps) {
                 <Shield className="w-4 h-4 text-neon-green" />
                 View Secure Reference
               </Link>
+
+              <Link
+                href="/scanner"
+                className="inline-flex items-center gap-2 px-5 py-3.5 bg-neon-blue/15 hover:bg-neon-blue/25 border border-neon-blue/40 text-neon-blue rounded-xl text-xs font-bold transition-all shadow-md glow-blue"
+              >
+                <Zap className="w-4 h-4 fill-current" />
+                Scan with DAST Engine
+              </Link>
             </div>
           </div>
 
